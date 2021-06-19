@@ -1,3 +1,14 @@
+# User
+ESP8266/.vs/
+Debug/
+__vm/
+*.vcxproj
+*.filters
+*.user
+*.xml
+*.sln
+*.node_modules
+
 # Prerequisites
 *.d
 
