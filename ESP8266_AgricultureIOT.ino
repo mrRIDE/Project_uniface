@@ -47,6 +47,8 @@
 SSD1306 displayOLED(OLED_ID, OLED_SDA, OLED_SCL);
 DHT sensorDHT(DHT_OUT, DHT_TYPE);
 
+Ticker ticker10ms;
+Ticker ticker100ms;
 /* Global Variable Declare */
 struct sensor_dht_data
 {
@@ -54,55 +56,33 @@ struct sensor_dht_data
 	float temp;
 } DHTDATA;
 
-struct os_cycle_control
-{
-	uint32_t loopCycleCnt;				// 1ms
-	uint32_t preMillis;
-} OS;
-
 /*-------------------------------------------------------------*/
 /* Function Prototype */
 void systemInit();
 void variableInit();
+void task10ms_Schedule();
 void task100ms_Schedule();
-void task1000ms_Schedule();
 
 void readSensorDHT();
 void displayTempHumd();
 void blinkLED();
 
 /*-------------------------------------------------------------*/
-/* OS timer 1ms control */
-void OS_Timer_Control()
+/* Task List */
+void task10ms_Schedule()
 {
-	// os_coutup_1ms control
-	OS.loopCycleCnt++;
-	//Serial.printf("mill: %d, micro: %d,  coutup: %d", millis(), micros(), OS.loopCycleCnt);
-	//Serial.println();
-
-	// OS task control
-	if (OS.loopCycleCnt % 100 == 0)
-	{
-		task100ms_Schedule();
-	}
-	
-	if (OS.loopCycleCnt % 1000 == 0)
-	{
-		task1000ms_Schedule();
-	}
+	//wait for read 
+	//Serial.printf("task10ms: %d \n", millis());
 
 }
 
-/* Task List */
 void task100ms_Schedule()
 {
+	//Serial.printf("task100ms: %d \n", millis());
 	blinkLED();
-}
-
-void task1000ms_Schedule()
-{
 	readSensorDHT();
 	displayTempHumd();
+
 }
 
 /*-------------------------------------------------------------*/
@@ -110,13 +90,14 @@ void task1000ms_Schedule()
 void setup() {
 	systemInit();
 	variableInit();
-	
+	ticker10ms.attach_ms_scheduled(10, task10ms_Schedule);
+	ticker100ms.attach_ms_scheduled(100, task100ms_Schedule);
 }
 
 // the loop function runs over and over again until power down or reset
 void loop() {
-	//Use OS timer 1ms for Control
-	OS_Timer_Control();
+	//Use Ticker 10ms. 100ms for control OS
+	
 }
 
 /*-------------------------------------------------------------*/
@@ -124,9 +105,6 @@ void variableInit()
 {
 	DHTDATA.humd = 0;
 	DHTDATA.temp = 0;
-
-	OS.loopCycleCnt = 0;
-	OS.preMillis = 0;
 
 }
 
