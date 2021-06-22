@@ -1,6 +1,7 @@
 # User
 ESP8266/.vs/
 Debug/
+
 __vm/
 *.vcxproj
 *.filters
@@ -8,7 +9,7 @@ __vm/
 *.xml
 *.sln
 *.node_modules
-
+WebServer/node_modules/
 # Prerequisites
 *.d
 

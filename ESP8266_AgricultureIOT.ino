@@ -21,7 +21,7 @@
 
 --Server
 -Cloud Azure
--Webserver: NodeJS, javascript, html, css
+-Webserver: Protocol: WebscoketIO, NodeJS, javascript, html, css
 --------------------プロジェクトの概略内容 (End)--------------------
 */
 
@@ -33,18 +33,22 @@
 #include <ESP8266WiFi.h>
 #include <Ticker.h>
 
+#include <ESP8266WiFi.h>
+#include <WebSocketsClient.h>
+
 /*-------------------------------------------------------------*/
 /* Define IO Port */
-#define OLED_SCL	9			//GPIO9
-#define OLED_SDA	10			//GPIO10
-#define OLED_ID		0x3C		//I2c Address
+#define OLED_SCL		9			//GPIO9
+#define OLED_SDA		10			//GPIO10
+#define OLED_ID			0x3C		//I2c Address
 
-#define DHT_PIN		12			//GPIO12
-#define DHT_TYPE	DHT11
+#define DHT_PIN			12			//GPIO12
+#define DHT_TYPE		DHT11
 
-#define CTR_PUMP	5			//GPIO5
-#define CTR_LIGHT	0			//GPIO0
-#define CTR_BUTTON	4			//GPIO4
+#define CTR_PUMP		5			//GPIO5
+#define CTR_LIGHT		0			//GPIO0
+#define CTR_BTNMODE 	4			//GPIO4
+#define CTR_BTNCTR		14			//GPIO15
 
 #define CTR_MODE_AUTO		0
 #define CTR_MODE_MANU_PUMP	1
@@ -59,17 +63,27 @@
 #define OFF				0
 
 /*-------------------------------------------------------------*/
-/* Config Device */
+/* Object Declare */
+
+const char* ssid = "IODATA-b0cb48-2G";
+const char* pass = "3316246269881";
+
 SSD1306 displayOLED(OLED_ID, OLED_SDA, OLED_SCL);
 DHT sensorDHT(DHT_PIN, DHT_TYPE);
 
 Ticker ticker10ms;
 Ticker ticker100ms;
+
+WebSocketsClient webSocket;
+const char* host = "192.168.0.6";			//use cmd ipconfig to know localhost ip
+const int port = 7777;
+
 /* Global Variable Declare */
 struct sensor_dht_data
 {
 	float humd;
 	float temp;
+
 } DHTDATA;
 
 struct control_mode
@@ -77,13 +91,16 @@ struct control_mode
 	uint8_t ctrMode;			//0: Auto, 1: Manual
 	uint8_t pumpSts;
 	uint8_t lightSts;
+
 } CTRLSYSTEM;
+
 /*-------------------------------------------------------------*/
 /* Function Prototype */
 void systemInit();
 void variableInit();
 void task10ms_Schedule();
 void task100ms_Schedule();
+void mainControl();
 
 void readSensorDHT();
 void displaySystemInfor();
@@ -113,19 +130,92 @@ void task100ms_Schedule()
 
 }
 
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length)
+{
+	switch (type)
+	{
+	case WStype_DISCONNECTED:
+		Serial.println("[WSc]Disconneted!");
+		break;
+	case WStype_CONNECTED:
+		Serial.println("[WSc]Connected!");
+		break;
+	case WStype_TEXT:
+		Serial.printf("[WSc]get text: %s\n", payload);
+		if (strcmp((char*)payload, "LED_ON") == 0)
+		{
+			digitalWrite(CTR_LIGHT, LOW);
+		}
+		else if (strcmp((char*)payload, "LED_OFF") == 0)
+		{
+			digitalWrite(CTR_LIGHT, HIGH);
+		}
+		break;
+	case WStype_BIN:
+		Serial.printf("[WSc]get binary length: %u\n", length);
+		break;
+	default:
+		break;
+	}
+}
+
 /*-------------------------------------------------------------*/
 // the setup function runs once when you press reset or power the board
 void setup() {
 	systemInit();
 	variableInit();
+	
 	ticker10ms.attach_ms_scheduled(10, task10ms_Schedule);
 	ticker100ms.attach_ms_scheduled(100, task100ms_Schedule);
+
+	Serial.print("Connect to WiFi: ");
+	Serial.print(ssid);
+	WiFi.mode(WIFI_STA);
+	WiFi.begin(ssid, pass);
+	while (WiFi.status() != WL_CONNECTED)
+	{
+		delay(500);
+		Serial.print('.');
+	}
+
+	Serial.println();
+	Serial.print("Connected. ESP8266 IP: ");
+	Serial.println(WiFi.localIP());
+
+	webSocket.begin(host, port);
+	delay(100);
+
+	webSocket.onEvent(webSocketEvent);
+	delay(500);
+
+}
+
+void testBlinkLED()
+{
+	for (int i = 0; i < 6; i++)
+	{
+		digitalWrite(LED_BUILTIN, HIGH);
+		delay(30);
+		digitalWrite(LED_BUILTIN, LOW);
+		delay(30);
+	}
 }
 
 // the loop function runs over and over again until power down or reset
 void loop() {
 	//Use Ticker 10ms. 100ms for control OS
-
+	/*
+	delay(10);
+	webSocket.loop();
+	if (isButtonPress_150ms() == true)
+	{
+		webSocket.sendTXT("BTN_PRESSED");
+	}
+	else
+	{
+		webSocket.sendTXT("BTN_RELEASE");
+	}
+	*/
 }
 
 /*-------------------------------------------------------------*/
@@ -227,18 +317,16 @@ bool isButtonPress_150ms()
 	static uint16_t pressCnt = 0;
 
 	//Serial.printf("press100ms: %d, mili: %d \n", pressCnt, millis());
-	if (digitalRead(CTR_BUTTON) == 0)
+	if (digitalRead(CTR_BTNCTR) == 0)
 	{
-		pressCnt++;
-		//press time 15*os10ms=150ms
-		if (pressCnt > 15)
+		if (pressCnt < 20)
 		{
-			pressCnt = 0;
-			return true;
+			pressCnt++;
+			return false;
 		}
 		else
 		{
-			return false;
+			return true;
 		}
 	}
 	else
@@ -254,18 +342,16 @@ bool isButtonPress_3000ms()
 	static uint16_t pressCnt = 0;
 
 	//Serial.printf("press3000ms: %d, mili: %d \n", pressCnt, millis());
-	if (digitalRead(CTR_BUTTON) == 0)
+	if (digitalRead(CTR_BTNMODE) == 0)
 	{
-		pressCnt++;
-		//press time 300*os10ms=3000ms
-		if (pressCnt > 300)
+		if (pressCnt < 20)
 		{
-			pressCnt = 0;
-			return true;
+			pressCnt++;
+			return false;
 		}
 		else
 		{
-			return false;
+			return true;
 		}
 	}
 	else
@@ -361,7 +447,8 @@ void systemInit()
 	pinMode(LED_BUILTIN, OUTPUT);
 	pinMode(CTR_PUMP, OUTPUT);
 	pinMode(CTR_LIGHT, OUTPUT);
-	pinMode(CTR_BUTTON, INPUT);
+	pinMode(CTR_BTNMODE, INPUT);
+	pinMode(CTR_BTNCTR, INPUT);
 
 	digitalWrite(LED_BUILTIN, HIGH);		//Set OFF
 	digitalWrite(CTR_LIGHT, HIGH);

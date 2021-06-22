@@ -1,4 +1,76 @@
-<!DOCTYPE>
+<!DOCTYPE html>
 <html>
+    <head>
+        <title>ESP8266 WebSocket</title>
+    </head>
+    <body>
+        <div>
+            <a>WebSocket Status:  </a>
+            <a id="status" style="font-weight:bold">Disconnected </a>
+        </div>
+        
+        <div>
+            <a>ESP8266 Button Status</a>
+            <input type="checkbox" id="btn" name="btn" />
+        </div>
 
+        <div>
+            <a>Control LED </a>
+            <input type="checkbox" id="led" name="led" disabled="true" />
+        </div>
+
+        <script type="text/javascript">
+            var button = document.getElementById('btn');
+            var led = document.getElementById('led');
+            var url = window.location.host;
+            var ws = new WebSocket('ws://' + url + '/ws');
+
+            console.log('connecting...');
+
+            ws.onopen = function () {
+                document.getElementById('status').innerHTML = 'Connected';
+                led.disabled = false;
+                console.log('connected')
+            };
+
+            ws.onmessage = function (evt) {
+                console.log(evt.data);
+
+                if (evt.data == 'BTN_PRESSED') {
+                    button.checked = true;
+                }
+                else if (evt.data == 'BTN_RELEASE') {
+                    button.checked = false;
+                }
+                else if (evt.data == 'LED_OFF') {
+                    led.checked = false;
+                }
+                else if (evt.data == 'LED_ON') {
+                    led.checked = true;
+                }
+
+            };
+
+            ws.onclose = function () {
+                led.disabled = true;
+                document.getElementById('status').innerHTML = 'Disconnected';
+            };
+
+            led.onchange = function () {
+                var led_status;
+
+                if (led.checked == true) {
+                    led_status = 'LED_ON';
+                }
+                else {
+                    led_status = 'LED_OFF';
+                }
+
+                ws.send(led_status);
+                console.log('Send led status: ' + led_status);
+            }
+
+
+        </script>
+    </body>
 </html>
