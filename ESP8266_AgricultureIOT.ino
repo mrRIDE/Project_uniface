@@ -62,6 +62,38 @@
 #define ON				1
 #define OFF				0
 
+/* Define Name */
+// device name
+#define	DV_MODE			1
+#define DV_PUMP			2
+#define DV_LIGHT		3
+
+// message control device
+#define SUCCEEDED_SET_MODE_AUTO				1
+#define FAILED_SET_MODE_AUTO				2
+#define SUCCEEDED_SET_MODE_MANU_PUMP		3
+#define FAILED_SET_MODE_MANU_PUMP			4
+#define SUCCEEDED_SET_MODE_MANU_LIGH		5
+#define FAILED_SET_MODE_MANU_LIGH			6
+
+#define SUCCEEDED_SET_PUMP_ON				1
+#define FAILED_SET_PUMP_ON					2
+#define SUCCEEDED_SET_PUMP_OFF				3
+#define FAILED_SET_PUMP_OFF					4
+
+#define SUCCEEDED_SET_LIGH_ON				1
+#define FAILED_SET_LIGH_ON					2
+#define SUCCEEDED_SET_LIGH_OFF				3
+#define FAILED_SET_LIGH_OFF					4
+
+#define CURRENT_MODE_STS_AUTO				1
+#define CURRENT_MODE_STS_MANU_PUMP			2
+#define CURRENT_MODE_STS_MANU_LIGH			3
+#define CURRENT_PUMP_STS_ON					4
+#define CURRENT_PUMP_STS_OFF				5
+#define CURRENT_LIGH_STS_ON					6
+#define CURRENT_LIGH_STS_OFF				7
+
 /*-------------------------------------------------------------*/
 /* Object Declare */
 
@@ -71,8 +103,9 @@ const char* pass = "3316246269881";
 SSD1306 displayOLED(OLED_ID, OLED_SDA, OLED_SCL);
 DHT sensorDHT(DHT_PIN, DHT_TYPE);
 
-Ticker ticker10ms;
-Ticker ticker100ms;
+//Ticker ticker10ms;
+//Ticker ticker100ms;
+//Ticker ticker1000ms;
 
 WebSocketsClient webSocket;
 const char* host = "192.168.0.6";			//use cmd ipconfig to know localhost ip
@@ -130,8 +163,14 @@ void task100ms_Schedule()
 
 }
 
+void task1000ms_Schedule()
+{
+	updateDataToServerCycle1000ms();
+}
+
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length)
 {
+
 	switch (type)
 	{
 	case WStype_DISCONNECTED:
@@ -142,14 +181,19 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length)
 		break;
 	case WStype_TEXT:
 		Serial.printf("[WSc]get text: %s\n", payload);
-		if (strcmp((char*)payload, "LED_ON") == 0)
+		if (strcmp((char*)payload, "changeMode") == 0)
 		{
-			digitalWrite(CTR_LIGHT, LOW);
+			syncControlSystem(DV_MODE);
 		}
-		else if (strcmp((char*)payload, "LED_OFF") == 0)
+		else if (strcmp((char*)payload, "toggleLight") == 0)
 		{
-			digitalWrite(CTR_LIGHT, HIGH);
+			syncControlSystem(DV_LIGHT);
 		}
+		else if (strcmp((char*)payload, "togglePump") == 0)
+		{
+			syncControlSystem(DV_PUMP);
+		}
+
 		break;
 	case WStype_BIN:
 		Serial.printf("[WSc]get binary length: %u\n", length);
@@ -159,14 +203,289 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length)
 	}
 }
 
+void syncControlSystem(uint8_t control_element)
+{
+	if (control_element == DV_MODE)
+	{
+		switch (CTRLSYSTEM.ctrMode)
+		{
+		case CTR_MODE_AUTO:
+			updateCtrSystemValue(DV_MODE, CTR_MODE_MANU_PUMP);
+			break;
+		case CTR_MODE_MANU_PUMP:
+			updateCtrSystemValue(DV_MODE, CTR_MODE_MANU_LIGH);
+			break;
+		case CTR_MODE_MANU_LIGH:
+			updateCtrSystemValue(DV_MODE, CTR_MODE_AUTO);	//return auto
+			break;
+		default:
+			break;
+		}
+		return;
+	}
+	
+	if (control_element == DV_PUMP)
+	{
+		if (CTRLSYSTEM.ctrMode == CTR_MODE_MANU_PUMP)
+		{
+			togglePump();
+		}
+		return;
+	}
+
+	if (control_element == DV_LIGHT)
+	{
+		if (CTRLSYSTEM.ctrMode == CTR_MODE_MANU_LIGH)
+		{
+			toggleLight();
+		}
+		return;
+	}
+}
+
+void updateDataToServerCycle1000ms()
+{
+	// update current Mode status
+	switch (CTRLSYSTEM.ctrMode)
+	{
+	case CTR_MODE_AUTO: 
+		webSocket.sendTXT("CURRENT_MODE_STS_AUTO");
+		break;
+	case CTR_MODE_MANU_PUMP: 
+		webSocket.sendTXT("CURRENT_MODE_STS_MANU_PUMP");
+		break;
+	case CTR_MODE_MANU_LIGH:
+		webSocket.sendTXT("CURRENT_MODE_STS_MANU_LIGH");
+		break;
+	default:
+		break;
+	}
+
+	// update current Pump status
+	switch (CTRLSYSTEM.pumpSts)
+	{
+	case ON:
+		webSocket.sendTXT("CURRENT_PUMP_STS_ON");
+		break;
+	case OFF:
+		webSocket.sendTXT("CURRENT_PUMP_STS_OFF");
+		break;
+	default:
+		break;
+	}
+
+	// update current Light status
+	switch (CTRLSYSTEM.lightSts)
+	{
+	case ON:
+		webSocket.sendTXT("CURRENT_LIGH_STS_ON");
+		break;
+	case OFF:
+		webSocket.sendTXT("CURRENT_LIGH_STS_OFF");
+		break;
+	default:
+		break;
+	}
+
+	// update current DHT temperature
+	String temp = "Temp:" + String(DHTDATA.temp, 1) + "*C";
+	String humd = "Humd:" + String(DHTDATA.humd, 1) + "%";
+
+	webSocket.sendTXT(temp);
+	webSocket.sendTXT(humd);
+
+}
+
+void sendSetResultToServer(uint8_t device, uint8_t message)
+{
+	switch (device)
+	{
+	case DV_MODE:
+		switch (message)
+		{
+		case SUCCEEDED_SET_MODE_AUTO:
+			webSocket.sendTXT("SUCCEEDED_SET_MODE_AUTO");
+			break;
+		case FAILED_SET_MODE_AUTO:
+			webSocket.sendTXT("FAILED_SET_MODE_AUTO");
+			break;
+		case SUCCEEDED_SET_MODE_MANU_PUMP:
+			webSocket.sendTXT("SUCCEEDED_SET_MODE_MANU_PUMP");
+			break;
+		case FAILED_SET_MODE_MANU_PUMP:
+			webSocket.sendTXT("FAILED_SET_MODE_MANU_PUMP");
+			break;
+		case SUCCEEDED_SET_MODE_MANU_LIGH:
+			webSocket.sendTXT("SUCCEEDED_SET_MODE_MANU_LIGH");
+			break;
+		case FAILED_SET_MODE_MANU_LIGH:
+			webSocket.sendTXT("FAILED_SET_MODE_MANU_LIGH");
+			break;
+		default:
+			break;
+		}
+		break;
+	case DV_PUMP:
+		switch (message)
+		{
+		case SUCCEEDED_SET_PUMP_ON:
+			webSocket.sendTXT("SUCCEEDED_SET_PUMP_ON");
+			break;
+		case FAILED_SET_PUMP_ON:
+			webSocket.sendTXT("FAILED_SET_PUMP_ON");
+			break;
+		case SUCCEEDED_SET_PUMP_OFF:
+			webSocket.sendTXT("SUCCEEDED_SET_PUMP_OFF");
+			break;
+		case FAILED_SET_PUMP_OFF:
+			webSocket.sendTXT("FAILED_SET_PUMP_OFF");
+			break;
+		default:
+			break;
+		}
+		break;
+	case DV_LIGHT:
+		switch (message)
+		{
+		case SUCCEEDED_SET_LIGH_ON:
+			webSocket.sendTXT("SUCCEEDED_SET_LIGH_ON");
+			break;
+		case FAILED_SET_LIGH_ON:
+			webSocket.sendTXT("FAILED_SET_LIGH_ON");
+			break;
+		case SUCCEEDED_SET_LIGH_OFF:
+			webSocket.sendTXT("SUCCEEDED_SET_LIGH_OFF");
+			break;
+		case FAILED_SET_LIGH_OFF:
+			webSocket.sendTXT("FAILED_SET_LIGH_OFF");
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+void updateCtrSystemValue(uint8_t system_element, uint8_t value)
+{
+	switch (system_element)
+	{
+	case DV_MODE:
+		CTRLSYSTEM.ctrMode = value;
+		break;
+	case DV_PUMP:
+		CTRLSYSTEM.pumpSts = value;
+		break;
+	case DV_LIGHT:
+		CTRLSYSTEM.lightSts = value;
+		break;
+	default:
+		break;
+	}
+}
+
+void togglePump()
+{
+	uint8_t ctr_state_before;
+
+	ctr_state_before = digitalRead(CTR_PUMP);
+	if (ctr_state_before == HIGH)
+	{
+		//turn ON PUMP
+		if (controlSetPumpState(LOW) == true)
+		{
+			updateCtrSystemValue(DV_PUMP, ON);
+			sendSetResultToServer(DV_PUMP, SUCCEEDED_SET_PUMP_ON);
+		}
+		else
+		{
+			sendSetResultToServer(DV_PUMP, FAILED_SET_PUMP_ON);
+		}
+	}
+	else if (ctr_state_before == LOW)
+	{
+		// turn OFF PUMP
+		if (controlSetPumpState(HIGH) == true)
+		{
+			updateCtrSystemValue(DV_PUMP, OFF);
+			sendSetResultToServer(DV_PUMP, SUCCEEDED_SET_PUMP_OFF);
+		}
+		else
+		{
+			sendSetResultToServer(DV_PUMP, FAILED_SET_PUMP_OFF);
+		}
+	}
+}
+
+bool controlSetPumpState(bool set_status)
+{
+	digitalWrite(CTR_PUMP, set_status);
+	delay(5);
+	if (digitalRead(CTR_PUMP) == set_status)
+	{
+		return true;	// set command OK
+	}
+	else
+	{
+		return false;	// set command NG
+	}
+}
+
+void toggleLight()
+{
+	uint8_t ctr_state_before;
+
+	ctr_state_before = digitalRead(CTR_LIGHT);
+	if (ctr_state_before == HIGH)
+	{
+		//turn ON LIGHT
+		if (controlSetLightState(LOW) == true)
+		{
+			updateCtrSystemValue(DV_LIGHT, ON);
+			sendSetResultToServer(DV_LIGHT, SUCCEEDED_SET_LIGH_ON);
+		}
+		else
+		{
+			sendSetResultToServer(DV_LIGHT, FAILED_SET_LIGH_ON);
+		}
+	}
+	else if (ctr_state_before == LOW)
+	{
+		// turn OFF LIGH
+		if (controlSetLightState(HIGH) == true)
+		{
+			updateCtrSystemValue(DV_LIGHT, OFF);
+			sendSetResultToServer(DV_LIGHT, SUCCEEDED_SET_LIGH_OFF);
+		}
+		else
+		{
+			sendSetResultToServer(DV_LIGHT, FAILED_SET_LIGH_OFF);
+		}
+	}
+}
+
+bool controlSetLightState(bool set_status)
+{
+	digitalWrite(CTR_LIGHT, set_status);
+	delay(5);
+	if (digitalRead(CTR_LIGHT) == set_status)
+	{
+		return true;	// set command OK
+	}
+	else
+	{
+		return false;	// set command NG
+	}
+}
+
+
 /*-------------------------------------------------------------*/
 // the setup function runs once when you press reset or power the board
 void setup() {
 	systemInit();
 	variableInit();
-	
-	ticker10ms.attach_ms_scheduled(10, task10ms_Schedule);
-	ticker100ms.attach_ms_scheduled(100, task100ms_Schedule);
 
 	Serial.print("Connect to WiFi: ");
 	Serial.print(ssid);
@@ -188,6 +507,14 @@ void setup() {
 	webSocket.onEvent(webSocketEvent);
 	delay(500);
 
+	updateDataToServerCycle1000ms();
+	delay(200);
+
+	//ticker10ms.attach_ms_scheduled(10, task10ms_Schedule);
+	//ticker100ms.attach_ms_scheduled(100, task100ms_Schedule);
+	//ticker1000ms.attach_ms_scheduled(1000, task1000ms_Schedule);
+	//delay(100);
+
 }
 
 void testBlinkLED()
@@ -204,18 +531,15 @@ void testBlinkLED()
 // the loop function runs over and over again until power down or reset
 void loop() {
 	//Use Ticker 10ms. 100ms for control OS
-	/*
-	delay(10);
+	mainControl();
+	blinkLED();
+	readSensorDHT();
+	delay(100);
+	displaySystemInfor();
+	updateDataToServerCycle1000ms();
 	webSocket.loop();
-	if (isButtonPress_150ms() == true)
-	{
-		webSocket.sendTXT("BTN_PRESSED");
-	}
-	else
-	{
-		webSocket.sendTXT("BTN_RELEASE");
-	}
-	*/
+	delay(100);
+
 }
 
 /*-------------------------------------------------------------*/
@@ -251,13 +575,13 @@ void checkChangeMode()
 		switch (CTRLSYSTEM.ctrMode)
 		{
 		case CTR_MODE_AUTO:
-			CTRLSYSTEM.ctrMode = CTR_MODE_MANU_PUMP;
+			updateCtrSystemValue(DV_MODE, CTR_MODE_MANU_PUMP);
 			break;
 		case CTR_MODE_MANU_PUMP:
-			CTRLSYSTEM.ctrMode = CTR_MODE_MANU_LIGH;
+			updateCtrSystemValue(DV_MODE, CTR_MODE_MANU_LIGH);
 			break;
 		case CTR_MODE_MANU_LIGH:
-			CTRLSYSTEM.ctrMode = CTR_MODE_AUTO;	//return auto
+			updateCtrSystemValue(DV_MODE, CTR_MODE_AUTO);	//return auto
 			break;
 		default:
 			break;
@@ -270,24 +594,24 @@ void controlAutoMode()
 {
 	if (DHTDATA.temp < CTR_TEMP_MIN)
 	{
-		digitalWrite(CTR_LIGHT, LOW);		//turn on light
-		CTRLSYSTEM.lightSts = digitalRead(CTR_LIGHT);
+		controlSetLightState(LOW);			// turn ON light
+		updateCtrSystemValue(DV_LIGHT, ON);
 	}
 	else if (DHTDATA.temp > CTR_LIGHT)
 	{
-		digitalWrite(CTR_PUMP, HIGH);		//turn off light
-		CTRLSYSTEM.lightSts = digitalRead(CTR_LIGHT);
+		controlSetLightState(HIGH);			// turn OFF light
+		updateCtrSystemValue(DV_LIGHT, OFF);
 	}
 
 	if (DHTDATA.humd < CTR_HUMD_MIN)
 	{
-		digitalWrite(CTR_PUMP, LOW);		//turn on pump
-		CTRLSYSTEM.pumpSts = digitalRead(CTR_PUMP);
+		controlSetPumpState(LOW);			// turn  ON pump
+		updateCtrSystemValue(DV_PUMP, ON);
 	}
 	else if (DHTDATA.humd > CTR_PUMP)
 	{
-		digitalWrite(CTR_PUMP, HIGH);		//turn off pump
-		CTRLSYSTEM.pumpSts = digitalRead(CTR_PUMP);
+		controlSetPumpState(HIGH);			// turn OFF pump
+		updateCtrSystemValue(DV_PUMP, OFF);
 	}
 
 }
@@ -299,12 +623,10 @@ void controlManualMode(uint8_t manu_mode)
 		switch (manu_mode)
 		{
 		case CTR_MODE_MANU_PUMP:
-			digitalWrite(CTR_PUMP, !digitalRead(CTR_PUMP));
-			CTRLSYSTEM.pumpSts = digitalRead(CTR_PUMP);
+			togglePump();
 			break;
 		case CTR_MODE_MANU_LIGH:
-			digitalWrite(CTR_LIGHT, !digitalRead(CTR_LIGHT));
-			CTRLSYSTEM.lightSts = digitalRead(CTR_LIGHT);
+			toggleLight();
 			break;
 		default:
 			break;

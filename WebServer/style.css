@@ -1,0 +1,80 @@
+
+html {
+    font-family: Arial;
+    text-align: center;
+    display: inline-block;
+}
+
+.topnav {
+    overflow: hidden;
+    background-color: #612b78;
+}
+
+h1 {
+    color: white;
+    font-size: 20px;
+}
+
+h2 {
+    color: firebrick;
+    font-size: 20px;
+}
+
+a {
+    color: blue;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+p {
+    background-color: white;
+}
+
+.content {
+    height: 600px;
+}
+
+.monitor {
+}
+
+.dht-labels {
+    font-size: 25px;
+    vertical-align: middle;
+    padding-bottom: 15px;
+}
+
+.dht-value {
+    font-size: 25px;
+    font-weight: bold;
+    color: blue;
+}
+
+.status-value {
+    font-weight: bold;
+    color: darkred;
+}
+
+.units {
+    font-size: 20px;
+}
+
+.button {
+    padding: 5px 10px;
+    font-size: 13px;
+    text-align: center;
+    outline: none;
+    color: #D3D3D3;
+    background-color: #130ffa;
+    border-radius: 5px;
+}
+
+    .button:hover {
+        background-color: brown;
+    }
+
+.footer {
+    overflow: hidden;
+    background-color: #612b78;
+}
+
+

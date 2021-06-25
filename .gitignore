@@ -1,7 +1,9 @@
 # User
 ESP8266/.vs/
 Debug/
-
+ex2/
+examples/
+link.txt
 __vm/
 *.vcxproj
 *.filters
